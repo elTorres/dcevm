@@ -1,0 +1,2 @@
+# HotSpot sources use LF: keep the patch queue in LF on every platform (also on Windows with core.autocrlf=true)
+/hotspot/.hg/patches/* text eol=lf

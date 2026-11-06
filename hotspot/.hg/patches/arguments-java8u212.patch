@@ -1,0 +1,64 @@
+Add AllowEnhancedClassRedefinition argument and DCEVM bug URL (jdk8u212 onwards: upstream added VENDOR_URL_VM_BUG).
+
+diff --git a/src/share/vm/runtime/arguments.cpp b/src/share/vm/runtime/arguments.cpp
+index 43e31d2..d8ff85f 100644
+--- a/src/share/vm/runtime/arguments.cpp
++++ b/src/share/vm/runtime/arguments.cpp
+@@ -65,11 +65,11 @@
+ #include "gc_implementation/parallelScavenge/parallelScavengeHeap.hpp"
+ #endif // INCLUDE_ALL_GCS
+ 
+-// Note: This is a special bug reporting site for the JVM
++// (DCEVM) The DCE VM has its own bug tracking system.
+ #ifdef VENDOR_URL_VM_BUG
+ # define DEFAULT_VENDOR_URL_BUG VENDOR_URL_VM_BUG
+ #else
+-# define DEFAULT_VENDOR_URL_BUG "http://bugreport.java.com/bugreport/crash.jsp"
++# define DEFAULT_VENDOR_URL_BUG "https://github.com/dcevm/dcevm/issues"
+ #endif
+ #define DEFAULT_JAVA_LAUNCHER  "generic"
+ 
+@@ -1570,7 +1570,10 @@ void Arguments::set_conservative_max_heap_alignment() {
+ }
+ 
+ void Arguments::select_gc_ergonomically() {
+-  if (os::is_server_class_machine()) {
++  if (AllowEnhancedClassRedefinition) {
++    // (DCEVM) enforces serial GC
++    FLAG_SET_ERGO(bool, UseSerialGC, true);
++  } else if (os::is_server_class_machine()) {
+     if (should_auto_select_low_pause_collector()) {
+       FLAG_SET_ERGO(bool, UseConcMarkSweepGC, true);
+     } else {
+@@ -2228,6 +2231,17 @@ bool Arguments::check_gc_consistency() {
+   if (UseConcMarkSweepGC || UseParNewGC) i++;
+   if (UseParallelGC || UseParallelOldGC) i++;
+   if (UseG1GC)                           i++;
++
++  if (AllowEnhancedClassRedefinition) {
++    // (DCEVM) Must use serial GC. This limitation applies because the instance size changing GC modifications
++    // are only built into the mark and compact algorithm.
++    if (!UseSerialGC && i >= 1) {
++      jio_fprintf(defaultStream::error_stream(),
++                    "Must use the serial GC in the DCEVM\n");
++      status = false;
++    }
++  }
++
+   if (i > 1) {
+     jio_fprintf(defaultStream::error_stream(),
+                 "Conflicting collector combinations in option list; "
+diff --git a/src/share/vm/runtime/globals.hpp b/src/share/vm/runtime/globals.hpp
+index 421a3ba..d1e1a6f 100644
+--- a/src/share/vm/runtime/globals.hpp
++++ b/src/share/vm/runtime/globals.hpp
+@@ -1316,6 +1316,9 @@ class CommandLineFlags {
+   product(intx, TraceRedefineClasses, 0,                                    \
+           "Trace level for JVMTI RedefineClasses")                          \
+                                                                             \
++  product(bool, AllowEnhancedClassRedefinition, true,                       \
++          "Allow enhanced class redefinition beyond swapping method bodies")\
++                                                                            \
+   develop(bool, StressMethodComparator, false,                              \
+           "Run the MethodComparator on all loaded methods")                 \
+                                                                             \

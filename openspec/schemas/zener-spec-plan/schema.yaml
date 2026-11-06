@@ -1,0 +1,43 @@
+name: zener-spec-plan
+version: 1
+description: Zener workflow - especificaciones concisas → un único plan.md que también es la lista de tareas
+artifacts:
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Especificaciones de comportamiento concisas, una por capacidad
+    template: spec.md
+    instruction: |
+      Comportamiento observable únicamente: no incluir nombres de clases, librerías ni pasos de implementación.
+
+      - Reutiliza las rutas de capacidades listadas por `openspec list --specs`. Nombra las nuevas capacidades según un comportamiento duradero (`cancelación-de-pedidos`, no `añadir-botón-cancelar`).
+      - Un comportamiento por requisito. Añade más escenarios solo para casos límite claramente diferentes.
+      - MODIFIED copia el requisito existente completo, conservando todos sus escenarios.
+    requires: []
+
+  - id: plan
+    generates: plan.md
+    description: Objetivo, decisiones y fases de corte vertical con los contratos, pruebas y tareas necesarios para implementar las especificaciones
+    template: plan.md
+    instruction: |
+      Planifica cómo implementar las especificaciones. Sé breve: se revisa junto con las especificaciones.
+
+      - Decisiones: elecciones y suposiciones que no estén indicadas en la solicitud, una por línea, mencionando la alternativa descartada cuando no sea evidente. Finaliza indicando qué queda fuera del alcance.
+      - Fases: una fase por cada parte del cambio que tenga valor por sí misma, incluso si el resto nunca llegara a desarrollarse: un usuario debe poder completar un objetivo con ella. Las partes que solo aportan valor juntas forman una única fase. Cada fase funcional es un corte vertical que abarca todas las capas y todos los repositorios que necesita esa parte (contrato de API, interfaz de usuario, lógica y persistencia conjuntamente), en lugar de separar las capas técnicas o los repositorios entre fases. Como excepción, se permiten fases preparatorias de dependencias o configuración, separadas de la implementación del primer caso de uso. Cada fase debe poder compilarse, superar las verificaciones en todos los repositorios implicados y confirmarse en Git de forma independiente, sin dejar el sistema en un estado de negocio incorrecto. La primera fase con funcionalidad debe producir algo que el usuario pueda ver, utilizar o ejecutar; normalmente será la fase 1, salvo que esta solo prepare dependencias o configuración.
+      - Contratos: únicamente firmas públicas, en el lenguaje en que esté escrito cada contrato e indicando el repositorio al que pertenece, agrupadas por tipo (endpoints de API y sus datos de entrada y salida, dominio, servicios de aplicación, puertos y repositorios, eventos de dominio, esquemas de base de datos, contratos de componentes frontend y sus interfaces, configuración y archivos de entorno, textos de interfaz de usuario o de correos electrónicos). No incluir dependencias de constructores. Omitir los tipos que no tengan cambios.
+      - Pruebas: la estrategia de pruebas de la fase, demostrando su comportamiento con el menor número posible de pruebas. Un test de aceptación por cada objetivo de usuario a través de la API pública o de la UI, y tests unitarios de servicios de aplicación para las reglas de negocio, con casos seleccionados mediante partición de equivalencia y análisis de valores límite. Entre repositories, utiliza contract tests basados en el contrato de la API en lugar de tests end-to-end. Nunca demuestres el mismo comportamiento dos veces en distintos niveles. Enumera cada suite indicando los comportamientos que cubre, no cada caso de prueba individual..
+      - Tareas: en la tarea que lo requiera, referencia el código existente del que deban copiarse patrones.
+      - Cada fase debe finalizar con la tarea de verificación definida en la plantilla.
+      - Solo las tareas de las fases son casillas de verificación: cada `- [ ]` de este archivo cuenta como una tarea.
+      - Escribe en español y no uses el carácter `—`.
+    requires:
+      - specs
+
+apply:
+  requires: [plan]
+  tracks: plan.md
+  instruction: |
+    Implementa únicamente la primera fase que tenga tareas sin marcar y marca cada tarea como completada a medida que la finalices.
+
+    Cuando la tarea de verificación de la fase se complete correctamente, añade o actualiza `implemented_by` (con la misma estructura que `created_by`) y `last_implementation_at` en el frontmatter, y reescribe el apartado siguiente paso.
+
+    Después de superar la verificación, crea un conventional commit por repositorio con cambios de la fase, incluyendo únicamente los cambios de esa fase. Incluye `plan.md` únicamente en el repositorio donde reside. Si un commit falla, detente e informa de los commits creados y de los pendientes; no reviertas automáticamente los anteriores ni avances de fase. Cuando todos los commits se hayan creado, detente: la siguiente fase solo comenzará cuando el usuario ejecute `apply` de nuevo.

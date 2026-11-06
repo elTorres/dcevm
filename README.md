@@ -17,7 +17,7 @@ You can download binaries [here](https://dcevm.github.io/).
 
 [hotspot/.hg/patches/](hotspot/.hg/patches/) contains patches for all supported versions. Each patch is named by concatenating prefix `full` or `light` with the OpenJDK HotSpot tag. `full` patches support full redefenition capabilities (including removal of superclasses, for example). `light` patches are easier to maintain, but they only support limited functionality (generally, additions to class hierarchies are fine, removals are not).
 
-HotSpot tag is the name of the tag in the corresponding HotSpot Mercurial repository ([Java 8](http://hg.openjdk.java.net/jdk8u/jdk8u/hotspot)/[Java 7](http://hg.openjdk.java.net/jdk7u/jdk7u/hotspot)).
+HotSpot tag is the name of the tag in the corresponding OpenJDK Git repository ([Java 8](https://github.com/openjdk/jdk8u)/[Java 7](https://github.com/openjdk/jdk7u)). Only its `hotspot/` directory is downloaded.
 
 ## Building
 
@@ -27,7 +27,7 @@ You need the following software to build DCEVM:
 
 * Java 7 or later. If you intend to run tests, it should be one of the supported versions (see list of [patches/](patches/))
 * C++ compiler toolchain (gcc). There is no strict version requirement except that it should be supported by HotSpot build scripts.
-* Mercurial with [Mercurial Queues Extension](https://mercurial.selenic.com/wiki/MqExtension) enabled.
+* Git 2.27 or later and GNU patch (on Windows, the one bundled with Git for Windows is used). Mercurial is no longer needed.
 
 #### Mac OS X specific requirements
 

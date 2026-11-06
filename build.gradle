@@ -33,82 +33,138 @@ project('hotspot') {
         }
     }
 
-    task checkMercurial(description: 'Verify Mercurial is installed') << {
-        def os = new ByteArrayOutputStream()
-        try {
-            def result = exec {
-                executable 'hg'
-                args 'help', 'qinit'
-                standardOutput = os
-                errorOutput = os
-                ignoreExitValue = true
-            }
-            if (result.getExitValue() != 0) {
-                throw new GradleException("Mercurial does not have mq extension installed! Consult README.md for details.")
-            }
-        } catch (GradleException e) {
-            throw new GradleException("Failed to execute 'hg'. Make sure you have Mercurial installed!")
-        }
-    }
+    // Patch queue (mq layout kept for history; Mercurial itself is no longer used)
+    def patchesDir = file('.hg/patches')
+    // Cache with the hotspot/ directory of the OpenJDK repository (shallow, partial and sparse clone)
+    def upstreamDir = new File(rootProject.buildDir, 'hotspot-upstream')
+    def hotspotRepository = hotspotTag.contains('jdk7') ? hotspotGitRepository7 : hotspotGitRepository8
+    // Same guards 'hg qselect' used to select
+    def patchGuards = [flavor, hotspotTag.contains('jdk7') ? 'jdk7' : 'jdk8', hotspotTag, flavor + '-' + hotspotTag]
 
-    task init(description: 'Initialize HotSpot repository', dependsOn: checkMercurial) << {
-        file('hotspot').mkdir()
-        exec {
-            executable 'hg'
-            args 'init'
-            ignoreExitValue = true
-        }
-    }
-
-    task pull(description: 'Pull OpenJDK HotSpot changes', dependsOn: init) {
+    task fetchSources(description: 'Fetch the hotspot/ directory of hotspotTag from the OpenJDK Git repository') {
         doLast {
-            def hotspotRepository = hotspotTag.contains('jdk7') ?
-                    'http://hg.openjdk.java.net/jdk7u/jdk7u/hotspot' :
-                    'http://hg.openjdk.java.net/jdk8u/jdk8u/hotspot'
-            exec {
-                executable 'hg'
-                args 'pull', hotspotRepository
+            upstreamDir.mkdirs()
+            if (!new File(upstreamDir, '.git').isDirectory()) {
+                runCommand(project, upstreamDir, ['git', 'init', '-q'])
+                runCommand(project, upstreamDir, ['git', 'config', 'core.autocrlf', 'false'])
+                runCommand(project, upstreamDir, ['git', 'remote', 'add', 'origin', hotspotRepository])
+                runCommand(project, upstreamDir, ['git', 'sparse-checkout', 'set', 'hotspot'])
+            } else {
+                runCommand(project, upstreamDir, ['git', 'remote', 'set-url', 'origin', hotspotRepository])
             }
-        }
-    }
-
-    task patch(description: 'Patch HotSpot sources', dependsOn: pull) {
-
-        doLast {
-            exec {
-                executable 'hg'
-                args 'qpop', '-a'
-                ignoreExitValue = true
-            }
-            exec {
-                executable 'hg'
-                args 'update', '-C', '-r', hotspotTag
-            }
-            new ByteArrayOutputStream().withStream { os ->
-                exec {
-                    workingDir 'hotspot'
-                    executable 'hg'
-                    args 'status'
-                    standardOutput os
+            def tagRef = "refs/tags/${hotspotTag}"
+            def local = runCommand(project, upstreamDir, ['git', 'rev-parse', '-q', '--verify', "${tagRef}^{commit}"], true)
+            if (local.exitValue != 0) {
+                def remote = runCommand(project, upstreamDir, ['git', 'ls-remote', '--tags', 'origin', tagRef])
+                if (remote.output.trim().isEmpty()) {
+                    throw new GradleException("HotSpot tag '${hotspotTag}' does not exist in ${hotspotRepository}")
                 }
-                // Purge unversioned files
-                def str = os.toString()
-                def matcher = str =~ /(?m)^\?\s+(.*)$/
-                matcher.each {
-                    ant.delete(file: new File(file('hotspot'), it[1]))
+                logger.lifecycle("Fetching ${hotspotTag} from ${hotspotRepository}")
+                runCommand(project, upstreamDir, ['git', 'fetch', '-q', '--depth', '1', '--filter=blob:none', 'origin', "+${tagRef}:${tagRef}"])
+            }
+            runCommand(project, upstreamDir, ['git', 'checkout', '-q', '-f', '--detach', tagRef])
+            if (!new File(upstreamDir, 'hotspot/make').isDirectory()) {
+                throw new GradleException("Tag '${hotspotTag}' of ${hotspotRepository} has no hotspot/ directory")
+            }
+        }
+    }
+
+    task patch(description: 'Patch HotSpot sources', dependsOn: fetchSources) {
+        doLast {
+            def selected = selectPatches(new File(patchesDir, 'series'), patchGuards)
+            def until = project.hasProperty('patchUntil') ? project.patchUntil : null
+            if (until != null && !selected.contains(until)) {
+                throw new GradleException("patchUntil '${until}' is not among the patches selected for guards ${patchGuards}: ${selected}")
+            }
+            def missing = selected.findAll { !new File(patchesDir, it).isFile() }
+            if (!missing.isEmpty()) {
+                throw new GradleException("Patches listed in series do not exist: ${missing}")
+            }
+            def patchExe = resolvePatchExecutable(project)
+            logger.lifecycle("Guards ${patchGuards}: ${selected.size()} patches selected")
+
+            // Start from pristine sources: everything but the patch queue and the build output is discarded
+            projectDir.listFiles().each { f ->
+                if (f.name != '.hg' && f.name != 'build') {
+                    deleteRecursively(project, f)
                 }
             }
-            def guards = [flavor, hotspotTag.contains('jdk7') ? 'jdk7' : 'jdk8',
-                          hotspotTag, flavor + '-' + hotspotTag]
-            exec {
-                executable 'hg'
-                args 'qselect'
-                args guards
+            project.copy {
+                from new File(upstreamDir, 'hotspot')
+                into projectDir
             }
-            exec {
-                executable 'hg'
-                args 'qpush', '-a'
+
+            // Local history: one commit with the upstream sources and one commit per applied patch
+            runCommand(project, projectDir, ['git', 'init', '-q'])
+            runCommand(project, projectDir, ['git', 'config', 'core.autocrlf', 'false'])
+            runCommand(project, projectDir, ['git', 'config', 'user.name', 'DCEVM build'])
+            runCommand(project, projectDir, ['git', 'config', 'user.email', 'dcevm-build@localhost'])
+            // Build-internal scratch repository, its commits are never published
+            runCommand(project, projectDir, ['git', 'config', 'commit.gpgsign', 'false'])
+            new File(projectDir, '.git/info/exclude').text = '/.hg/\n/build/\n'
+            runCommand(project, projectDir, ['git', 'add', '-A'])
+            runCommand(project, projectDir, ['git', 'commit', '-q', '-m', "upstream ${hotspotTag}"])
+
+            for (name in selected) {
+                def patchFile = new File(patchesDir, name)
+                if (hasHunks(patchFile)) {
+                    def args = [patchExe, '-p1', '--fuzz=2', '--forward', '--batch', '--no-backup-if-mismatch', '-i', patchFile.absolutePath]
+                    def dryRun = runCommand(project, projectDir, args + ['--dry-run'], true)
+                    if (dryRun.exitValue != 0) {
+                        throw new GradleException(describePatchFailure(name, dryRun.output))
+                    }
+                    def result = runCommand(project, projectDir, args, true)
+                    if (result.exitValue != 0) {
+                        throw new GradleException(describePatchFailure(name, result.output))
+                    }
+                    logger.lifecycle("Applied ${name}")
+                    result.output.readLines().findAll { it.contains('with fuzz') }.each {
+                        logger.lifecycle("  ${it}")
+                    }
+                } else {
+                    logger.lifecycle("Applied ${name} (no changes yet)")
+                }
+                runCommand(project, projectDir, ['git', 'add', '-A'])
+                runCommand(project, projectDir, ['git', 'commit', '-q', '--allow-empty', '-m', name])
+                if (name == until) {
+                    logger.lifecycle("Stopped after ${until} (patchUntil)")
+                    break
+                }
             }
+        }
+    }
+
+    task refreshPatch(description: 'Rewrite the last applied patch with the current changes to the HotSpot sources') {
+        doLast {
+            if (!new File(projectDir, '.git').isDirectory()) {
+                throw new GradleException('HotSpot sources are not patched, run :hotspot:patch first')
+            }
+            def commits = runCommand(project, projectDir, ['git', 'rev-list', '--count', 'HEAD']).output.trim().toInteger()
+            if (commits < 2) {
+                throw new GradleException('No patch has been applied yet, nothing to refresh')
+            }
+            def name = runCommand(project, projectDir, ['git', 'log', '-1', '--format=%s']).output.trim()
+            def patchFile = new File(patchesDir, name)
+
+            // Keep the description/header of the patch (everything before the first diff)
+            def header = ''
+            if (patchFile.isFile()) {
+                def lines = patchFile.getText('ISO-8859-1').replace('\r\n', '\n').split('\n', -1) as List
+                def firstDiff = lines.findIndexOf { it.startsWith('diff ') || it.startsWith('--- ') }
+                def headerLines = firstDiff >= 0 ? lines.subList(0, firstDiff) : lines
+                header = headerLines.join('\n').replaceAll(/\n*$/, '')
+                header = header.isEmpty() ? '' : header + '\n\n'
+            }
+
+            runCommand(project, projectDir, ['git', 'add', '-A'])
+            def diff = runCommand(project, projectDir, ['git', 'diff', '--cached', '--no-color', '--no-ext-diff', '--no-renames',
+                                                        '--src-prefix=a/', '--dst-prefix=b/', 'HEAD~1'])
+            patchFile.withOutputStream { out ->
+                out.write(header.getBytes('ISO-8859-1'))
+                out.write(diff.bytes)
+            }
+            runCommand(project, projectDir, ['git', 'commit', '-q', '--amend', '--no-edit', '--allow-empty'])
+            logger.lifecycle("Refreshed ${patchFile}")
         }
     }
 
@@ -232,6 +288,98 @@ project('dcevm') {
 
     test.dependsOn project(':native').tasks['compile']
     test.dependsOn project(':hotspot').tasks[kind == 'fastdebug' ? 'installFastdebug' : 'installProduct']
+}
+
+
+// Runs a command and returns [exitValue, output (stdout + stderr as text), bytes (stdout only)]
+def runCommand(Project prj, File dir, List cmd, boolean ignoreExit = false) {
+    def out = new ByteArrayOutputStream()
+    def err = new ByteArrayOutputStream()
+    def result = prj.exec {
+        workingDir dir
+        commandLine cmd.collect { it.toString() }
+        standardOutput = out
+        errorOutput = err
+        ignoreExitValue = true
+    }
+    def text = out.toString() + err.toString()
+    if (!ignoreExit && result.exitValue != 0) {
+        throw new GradleException("Command failed with exit code ${result.exitValue}: ${cmd.join(' ')}\n${text}")
+    }
+    return [exitValue: result.exitValue, output: text, bytes: out.toByteArray()]
+}
+
+// Patches of an mq series that apply for the given guards, in series order.
+// Same semantics as 'hg qselect': a patch without guards always applies, a '#-guard' that is
+// selected excludes it, and when it has '#+guard' entries at least one of them must be selected.
+List<String> selectPatches(File series, List<String> guards) {
+    def selected = []
+    series.readLines().each { raw ->
+        def line = raw.trim()
+        if (line.isEmpty() || line.startsWith('#')) {
+            return
+        }
+        def name = line.split(/\s+/)[0]
+        def positive = []
+        def negative = []
+        (line.substring(name.length()) =~ /#([-+])([^-+#\s][^#\s]*)/).each { m ->
+            (m[1] == '+' ? positive : negative) << m[2]
+        }
+        if (negative.any { guards.contains(it) }) {
+            return
+        }
+        if (!positive.isEmpty() && !positive.any { guards.contains(it) }) {
+            return
+        }
+        selected << name
+    }
+    return selected
+}
+
+// A patch file without hunks is an empty patch (for example, one that is being created)
+boolean hasHunks(File patchFile) {
+    return patchFile.readLines('ISO-8859-1').any { it.startsWith('@@') }
+}
+
+String describePatchFailure(String name, String output) {
+    def files = new LinkedHashSet()
+    def current = null
+    output.readLines().each { line ->
+        def m = line =~ /^(?:checking|patching) file '?(.+?)'?$/
+        if (m) {
+            current = m[0][1]
+        } else if (line =~ /FAILED|ignored|can't find file|No file to patch/) {
+            files << (current ?: '?')
+        }
+    }
+    return "Patch ${name} does not apply. Files with rejected hunks: ${files.isEmpty() ? 'unknown' : files.join(', ')}\n${output}"
+}
+
+// GNU patch; on Windows falls back to the one bundled with Git for Windows
+String resolvePatchExecutable(Project prj) {
+    String exe = prj.rootProject.patchExecutable
+    if (exe != 'patch' || prj.rootProject.os != Os.WINDOWS) {
+        return exe
+    }
+    def path = System.getenv('PATH') ?: ''
+    if (path.split(File.pathSeparator).any { new File(it, 'patch.exe').isFile() }) {
+        return exe
+    }
+    def gitExecPath = runCommand(prj, prj.projectDir, ['git', '--exec-path']).output.trim()
+    def bundled = new File(gitExecPath, '../../../usr/bin/patch.exe').canonicalFile
+    if (bundled.isFile()) {
+        return bundled.path
+    }
+    throw new GradleException("GNU patch not found: add it to the PATH or set -PpatchExecutable=<path>")
+}
+
+// Deletes a file or directory, including read-only files (Git objects are read-only on Windows)
+void deleteRecursively(Project prj, File f) {
+    if (f.isDirectory()) {
+        f.eachFileRecurse { it.setWritable(true) }
+    }
+    f.setWritable(true)
+    prj.delete(f)
 }
 
 
