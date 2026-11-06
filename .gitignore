@@ -14,3 +14,6 @@ build
 /core
 /hotspot.log
 /logs
+.agents/
+.claude/
+openspec/schemas/
