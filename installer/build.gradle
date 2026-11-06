@@ -30,13 +30,49 @@ sourceSets {
     }
 }
 
+// -PuseLocalBuild: bundle the product DCEVM compiled locally (:hotspot:compileProduct) for the current
+// platform instead of the build server data. The resource path is the one the installer looks up:
+// <os>_<arch>_<compiler>/product/<library> (ConfigurationInfo resource path + Installer.installClientServer).
+def useLocalBuild = project.hasProperty('useLocalBuild')
+def localLibraryName = rootProject.os.name() == 'WINDOWS' ? 'jvm.dll' : (rootProject.os.name() == 'MAC' ? 'libjvm.dylib' : 'libjvm.so')
+def localLibrary = new File(rootProject.project(':hotspot').projectDir, "build/product/${localLibraryName}")
+def localResource = "${rootProject.os.buildPath}_${rootProject.arch.buildArch}_${rootProject.compiler}/product/${localLibraryName}"
+
 task copyData {
-    onlyIf { Files.exists(dataSource) }
+    onlyIf { useLocalBuild || Files.exists(dataSource) }
     doLast {
         Files.createDirectories(processedData)
-        Files.walkFileTree(dataSource, new CopyDataVisitor(project));
+        if (useLocalBuild) {
+            if (!localLibrary.isFile()) {
+                throw new GradleException("No hay DCEVM product compilado (${localLibrary}): ejecuta :hotspot:compileProduct")
+            }
+            def target = processedData.resolve(localResource)
+            Files.createDirectories(target.parent)
+            Files.copy(localLibrary.toPath(), target, StandardCopyOption.REPLACE_EXISTING)
+            logger.lifecycle("Bundling ${localLibrary} as ${localResource}")
+        } else {
+            Files.walkFileTree(dataSource, new CopyDataVisitor(project));
+        }
     }
 }
+
+// With -PuseLocalBuild, check that the jar really contains the local DCEVM
+task checkLocalData(dependsOn: jar) {
+    onlyIf { useLocalBuild }
+    doLast {
+        def zip = new java.util.zip.ZipFile(jar.archivePath)
+        try {
+            def entry = zip.getEntry(localResource)
+            if (entry == null || entry.size != localLibrary.length()) {
+                throw new GradleException("${jar.archivePath.name} does not contain ${localResource} (${localLibrary})")
+            }
+        } finally {
+            zip.close()
+        }
+        logger.lifecycle("${jar.archivePath.name} contains ${localResource}")
+    }
+}
+jar.finalizedBy checkLocalData
 
 class CopyDataVisitor extends SimpleFileVisitor<Path> {
     def project

@@ -16,7 +16,7 @@ implemented_by:
     name: "Claude Opus"
     version: "5.5"
     reasoning_effort: "low"
-last_implementation_at: "2026-11-06T14:13:58Z"
+last_implementation_at: "2026-11-06T16:01:23Z"
 ---
 
 # Soporte de DCEVM para JDK 8u212
@@ -146,11 +146,11 @@ task copyData
 - `:installer:jar -PuseLocalBuild` sin `hotspot/build/product/jvm.dll`: falla con el mensaje indicado.
 - Aceptación manual con el jar: se añade `C:\Workspace\java\jdk1.8.0_212`, se instala como JVM por defecto (`java -version` muestra `Dynamic Code Evolution` y existe el respaldo de `jvm.dll`), se desinstala (vuelve la JVM de Oracle) y se instala como altjvm.
 
-- [ ] Ampliar `copyData` en `installer/build.gradle` con la rama `useLocalBuild`. Tomar `os`, `arch` y `compiler` del proyecto raíz, igual que `compileProduct` (`build.gradle:121-127`). La ruta de recurso debe coincidir con `ConfigurationInfo.WINDOWS` (`windows_amd64_compiler2`) y con `Installer.installClientServer` (`<resourcePath>/product/<lib>`).
-- [ ] Añadir la comprobación del contenido del jar y documentar `-PuseLocalBuild` en `docs/agents/building.md`.
-- [ ] Ejecutar la aceptación manual del instalador sobre `C:\Workspace\java\jdk1.8.0_212` y dejar el JDK en el estado que elija el usuario.
-- [ ] Verifica los cambios en cuanto a comprobación de tipos, linting y pruebas utilizando el comando de verificación del proyecto. Busca el comando en el archivo AGENTS.md o en la configuración del proyecto. Corrige cualquier problema que aparezca.
+- [x] Ampliar `copyData` en `installer/build.gradle` con la rama `useLocalBuild`. Tomar `os`, `arch` y `compiler` del proyecto raíz, igual que `compileProduct` (`build.gradle:121-127`). La ruta de recurso debe coincidir con `ConfigurationInfo.WINDOWS` (`windows_amd64_compiler2`) y con `Installer.installClientServer` (`<resourcePath>/product/<lib>`).
+- [x] Añadir la comprobación del contenido del jar y documentar `-PuseLocalBuild` en `docs/agents/building.md`.
+- [x] Ejecutar la aceptación manual del instalador sobre `C:\Workspace\java\jdk1.8.0_212` y dejar el JDK en el estado que elija el usuario.
+- [x] Verifica los cambios en cuanto a comprobación de tipos, linting y pruebas utilizando el comando de verificación del proyecto. Busca el comando en el archivo AGENTS.md o en la configuración del proyecto. Corrige cualquier problema que aparezca.
 
 ## Siguiente paso
 
-Fase 2 completada: DCEVM 8u212 se compila con VS2017, está instalado como `-XXaltjvm=dcevm` en `C:\Workspace\java\jdk1.8.0_212\jre` y la suite pasa (96 tests, 0 fallos, 11 con `@Ignore`). Ejecuta `/openspec-apply-change` para implementar la Fase 3 (instalador con el binario local).
+Todas las fases completadas. DCEVM 8u212 se compila con VS2017 a partir de las fuentes Git, `:installer:jar -PuseLocalBuild` genera un instalador con el `jvm.dll` local y la aceptación manual sobre `C:\Workspace\java\jdk1.8.0_212` ha ido bien (instalar como JVM por defecto, desinstalar e instalar como altjvm). El JDK queda con la JVM de Oracle por defecto y DCEVM como `-XXaltjvm=dcevm`. Revisa el cambio y archívalo con `/opsx:archive`.

@@ -42,3 +42,5 @@ Override any `gradle.properties` value with `-P`, for example `-PhotspotTag=jdk8
 ## Installer (`installer/`)
 
 A plain Java/Swing jar (`Main-Class: com.github.dcevm.installer.Main`). VM binaries are bundled from `installer/build/rawdata`, which is filled by the build server. The `copyData` task skips `fastdebug` builds. Support for JDK vendors and layouts (Oracle, OpenJDK, AdoptOpenJDK, SAP JVM, ...) lives in `ConfigurationInfo`.
+
+To bundle the VM you compiled locally instead, run `./gradlew :hotspot:compileProduct` and then `./gradlew :installer:jar -PuseLocalBuild`. `copyData` copies `hotspot/build/product/<libjvm>` to `<os>_<arch>_compiler2/product/<libjvm>` (for example `windows_amd64_compiler2/product/jvm.dll`), the resource the installer looks up for the current platform. It fails if that library does not exist. After `jar`, `checkLocalData` verifies the jar contains it. Run the result with `java -jar installer/build/libs/installer.jar`. It also lists the JDKs next to `JAVA_HOME`, and others can be added with its "Add installation directory" button.
