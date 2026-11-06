@@ -1,4 +1,4 @@
-set WINDOWS_SDK=c:\Program Files\Microsoft SDKs\Windows\v7.1
-call "%WINDOWS_SDK%\bin\setenv.cmd" /%ARCH%
+call "%~dp0..\windows-env.cmd"
+if errorlevel 1 exit /b 1
 
-cl /I%JAVA_HOME%\..\include /I%JAVA_HOME%\..\include\win32 natives.c /Febuild\natives.dll /LD
+cl /I"%JAVA_HOME%\..\include" /I"%JAVA_HOME%\..\include\win32" natives.c /Fobuild\natives.obj /Febuild\natives.dll /LD

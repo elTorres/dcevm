@@ -238,7 +238,8 @@ project('native') {
                 args 'build/libnatives.dylib'
             }
         } else {
-            commandLine 'cmd', '/c', 'compile.cmd'
+            // Explicit relative path: cmd may not search the current directory (NoDefaultCurrentDirectoryInExePath)
+            commandLine 'cmd', '/c', '.\\compile.cmd'
             environment ARCH: arch == Arch.X86 ? 'x86' : 'x64'
             environment JAVA_HOME: jre
         }

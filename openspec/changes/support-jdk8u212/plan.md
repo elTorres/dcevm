@@ -16,7 +16,7 @@ implemented_by:
     name: "Claude Opus"
     version: "5.5"
     reasoning_effort: "low"
-last_implementation_at: "2026-11-06T12:49:13Z"
+last_implementation_at: "2026-11-06T14:13:58Z"
 ---
 
 # Soporte de DCEVM para JDK 8u212
@@ -39,7 +39,7 @@ Poder parchear `C:\Workspace\java\jdk1.8.0_212` (Oracle JDK 8u212-b10, Windows x
   
   Esto sale de aplicar la serie de 8u202 sobre `jdk8u212-b04` durante la exploración: solo fallaron esos dos hunks.
 - `hotspotTag` por defecto pasa a `jdk8u212-b04`.
-- Toolchain de Windows: un script común `windows-env.cmd`, usado por `build.cmd` y `native/compile.cmd`, carga `vcvarsall.bat x64|x86` de VS2017. Lo localiza por la variable `VS2017_VCVARSALL` o, si no está, con `vswhere -version [15.0,16.0)`. Cygwin se toma de `CYGWIN_HOME`, por defecto `C:\cygwin`. Si falta algo, el script falla antes de `make`. Los makefiles de HotSpot 8u212 reconocen VS2017 (MSC_VER 1912 a 1916), pero no VS2019 ni VS2022.
+- Toolchain de Windows: un script común `windows-env.cmd`, usado por `build.cmd` y `native/compile.cmd`, carga `vcvarsall.bat x64|x86` de VS2017. Lo localiza por la variable `VS2017_VCVARSALL` o, si no está, con `vswhere -version [15.0,16.0)`. Cygwin se toma de `CYGWIN_HOME`, por defecto `C:\cygwin`. Si falta algo, el script falla antes de `make`. Los makefiles de HotSpot 8u212 solo asocian a VS2017 las versiones MSC_VER 1912 y 1913 (las 1914 a 1916 se añadieron en updates posteriores), y no reconocen VS2019 ni VS2022. Por eso `build.cmd` fuerza `FORCE_MSC_VER=1912` y `FORCE_LD_VER=1412` para cl 19.16. Además antepone el directorio de las herramientas MSVC al PATH de Cygwin, porque si no nmake usa el `link.exe` de coreutils, y vacía `NoDefaultCurrentDirectoryInExePath`, porque nmake ejecuta `adlc` desde el directorio actual.
 - Riesgo: HotSpot 8u212 no se ha compilado nunca con este toolchain en esta máquina, que no tiene Visual Studio, Cygwin ni Mercurial. La fase 2 puede destapar ajustes de makefile que hoy no se pueden prever.
 - Riesgo: al instalar como JVM por defecto, el `classes.jsa` de Oracle en `jre\bin\server` no corresponde al `jvm.dll` de DCEVM, así que CDS queda desactivado. Solo afecta al tiempo de arranque.
 - Instalador con binario local: `copyData` admite `-PuseLocalBuild`, que copia `hotspot/build/product/jvm.dll` a `data/<os>_<arch>_compiler2/product/`, la ruta que busca el instalador. Se descarta simular la estructura de `rawdata` del servidor de build.
@@ -120,11 +120,11 @@ Se compila `jvm.dll` para 8u212 con VS2017, se instala como `-XXaltjvm=dcevm` en
 - `./gradlew test` con Gradle ejecutándose sobre el JDK 8u212: la suite de `dcevm/` (redefinición, incluida `SimpleNativeTest`) pasa según `dcevm/build/test-results/`, ya que `ignoreFailures = true`.
 - `build.cmd` sin VS2017 detectable (`VS2017_VCVARSALL` apuntando a una ruta inexistente): falla antes de `make` con el mensaje de configuración.
 
-- [ ] Crear `windows-env.cmd` (detección con vswhere, validación de `CYGWIN_HOME`, mensajes de error) y usarlo desde `build.cmd` (sustituir las líneas 1-5) y `native/compile.cmd`.
-- [ ] Instalar en la máquina VS2017 Build Tools (componente VC x64 y Windows 10 SDK) y Cygwin con `make`, `zip`, `unzip`, `gawk` y `findutils`, y anotar los requisitos en `docs/agents/building.md`.
-- [ ] Compilar `product` y `fastdebug` de 8u212 y corregir los fallos de makefile o de compilación que aparezcan con VS2017. Los ajustes en fuentes de HotSpot van en un parche nuevo guardado con `#+light-jdk8u212-b04`, y los de build en `build.cmd`/`windows-env.cmd`.
-- [ ] Instalar como altjvm en `C:\Workspace\java\jdk1.8.0_212\jre` y ejecutar la suite. Revisar `dcevm/build/reports/tests/index.html` y documentar en `docs/agents/testing.md` las pruebas que fallen y no se arreglen en este cambio.
-- [ ] Verifica los cambios en cuanto a comprobación de tipos, linting y pruebas utilizando el comando de verificación del proyecto. Busca el comando en el archivo AGENTS.md o en la configuración del proyecto. Corrige cualquier problema que aparezca.
+- [x] Crear `windows-env.cmd` (detección con vswhere, validación de `CYGWIN_HOME`, mensajes de error) y usarlo desde `build.cmd` (sustituir las líneas 1-5) y `native/compile.cmd`.
+- [x] Instalar en la máquina VS2017 Build Tools (componente VC x64 y Windows 10 SDK) y Cygwin con `make`, `zip`, `unzip`, `gawk` y `findutils`, y anotar los requisitos en `docs/agents/building.md`.
+- [x] Compilar `product` y `fastdebug` de 8u212 y corregir los fallos de makefile o de compilación que aparezcan con VS2017. Los ajustes en fuentes de HotSpot van en un parche nuevo guardado con `#+light-jdk8u212-b04`, y los de build en `build.cmd`/`windows-env.cmd`.
+- [x] Instalar como altjvm en `C:\Workspace\java\jdk1.8.0_212\jre` y ejecutar la suite. Revisar `dcevm/build/reports/tests/index.html` y documentar en `docs/agents/testing.md` las pruebas que fallen y no se arreglen en este cambio.
+- [x] Verifica los cambios en cuanto a comprobación de tipos, linting y pruebas utilizando el comando de verificación del proyecto. Busca el comando en el archivo AGENTS.md o en la configuración del proyecto. Corrige cualquier problema que aparezca.
 
 ### Fase 3: Instalador con el binario local
 
@@ -153,4 +153,4 @@ task copyData
 
 ## Siguiente paso
 
-Fase 1 completada: `./gradlew :hotspot:patch` obtiene `jdk8u212-b04` desde GitHub y aplica la serie sin Mercurial. Antes de la Fase 2 hay que instalar en la máquina VS2017 Build Tools y Cygwin. Después, ejecuta `/openspec-apply-change` para implementar la Fase 2.
+Fase 2 completada: DCEVM 8u212 se compila con VS2017, está instalado como `-XXaltjvm=dcevm` en `C:\Workspace\java\jdk1.8.0_212\jre` y la suite pasa (96 tests, 0 fallos, 11 con `@Ignore`). Ejecuta `/openspec-apply-change` para implementar la Fase 3 (instalador con el binario local).
