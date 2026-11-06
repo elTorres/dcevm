@@ -38,3 +38,4 @@ Things that trip you up:
 - [docs/agents/building.md](docs/agents/building.md): toolchain requirements, platform specifics (macOS gcc, Linux gcc8 flags, Windows SDK + Cygwin), how the Gradle tasks chain together, installing, runtime flags.
 - [docs/agents/hotspot-patches.md](docs/agents/hotspot-patches.md): how the patch series and guards work, editing an existing patch (`patchUntil`/`refreshPatch`), adding support for a new JDK update.
 - [docs/agents/testing.md](docs/agents/testing.md): the versioned inner-class test convention (`A`, `A___1`, `__toVersion__`), `Full`/`Light` categories, running tests from an IDE.
+- [docs/agents/releasing.md](docs/agents/releasing.md): publishing the installer and the VM library as a GitHub release with `gh` (naming, steps, fixing a release).

@@ -2,17 +2,22 @@
 
 This project is a fork of original [DCEVM](http://ssw.jku.at/dcevm/) project.
 
-The purpose of the project is to maintain enhanced class redefinition functionality for OpenJDK HotSpot 7/8.
+The purpose of the project is to maintain enhanced class redefinition functionality for OpenJDK HotSpot 8. It currently targets **JDK 8u212**.
 
 ## Binaries
 
-You can download binaries [here](https://dcevm.github.io/).
+You can download binaries at [releases](https://github.com/elTorres/dcevm/releases). Release `light-jdk8u212+1` contains, for Windows x64:
 
-## Supported versions
+* `dcevm-light-jdk8u212-installer.jar`: graphical installer with DCEVM bundled. Run it with `java -jar dcevm-light-jdk8u212-installer.jar`, using a JVM other than the JDK you are going to patch.
+* `dcevm-light-jdk8u212-windows-amd64-jvm.dll`: the bare VM library, to install it by hand (see [Installing DCEVM](#installing-dcevm)).
 
-[hotspot/.hg/patches/](hotspot/.hg/patches/) contains patches for all supported versions. Each patch is named by concatenating prefix `full` or `light` with the OpenJDK HotSpot tag. `full` patches support full redefenition capabilities (including removal of superclasses, for example). `light` patches are easier to maintain, but they only support limited functionality (generally, additions to class hierarchies are fine, removals are not).
+## Supported version
 
-HotSpot tag is the name of the tag in the corresponding OpenJDK Git repository ([Java 8](https://github.com/openjdk/jdk8u)/[Java 7](https://github.com/openjdk/jdk7u)). Only its `hotspot/` directory is downloaded.
+DCEVM is built from the HotSpot tag `jdk8u212-b04` of the [OpenJDK 8u Git repository](https://github.com/openjdk/jdk8u) (only its `hotspot/` directory is downloaded) and is meant for JDK 1.8.0_212. It has been built and tested on Windows x64 against Oracle JDK 1.8.0_212.
+
+The flavor is `light`: additions to class hierarchies are supported, removals (of superclasses, for example) are not.
+
+The patches live in [hotspot/.hg/patches/](hotspot/.hg/patches/). The `series` file lists them and its guards select the ones for `jdk8u212-b04` and the `light` flavor.
 
 ## Building
 
@@ -20,9 +25,14 @@ HotSpot tag is the name of the tag in the corresponding OpenJDK Git repository (
 
 You need the following software to build DCEVM:
 
-* Java 7 or later. If you intend to run tests, it should be one of the supported versions (see list of [patches/](patches/))
-* C++ compiler toolchain (gcc). There is no strict version requirement except that it should be supported by HotSpot build scripts.
+* JDK 8u212 to run Gradle and the tests (for example `C:\Workspace\java\jdk1.8.0_212`).
 * Git 2.27 or later and GNU patch (on Windows, the one bundled with Git for Windows is used). Mercurial is no longer needed.
+* On Windows x64:
+  * Visual Studio 2017 Build Tools 15.9 with the C++ tools (`Microsoft.VisualStudio.Workload.VCTools`, `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`) and the Windows 10 SDK (`Microsoft.VisualStudio.Component.Windows10SDK.19041`). Later Visual Studio versions are not supported by the HotSpot 8u212 build scripts.
+  * Cygwin (64-bit) with `make`, `zip`, `unzip`, `gawk`, `findutils`, `file`, `diffutils`, `grep`, `sed` and `coreutils`. Set `CYGWIN_HOME` if it is not in `C:\cygwin`.
+* On Linux and macOS: a gcc toolchain supported by the HotSpot 8u212 build scripts (not verified with this version).
+
+See [docs/agents/building.md](docs/agents/building.md) for the details.
 
 #### Mac OS X specific requirements
 
@@ -51,41 +61,43 @@ export CXXFLAGS="${CXXFLAGS} ${CPPFLAGS}"
 
 ### Compiling DCEVM
 
-* Configure version you want in [gradle.properties](gradle.properties).
+* [gradle.properties](gradle.properties) is already set to `hotspotTag=jdk8u212-b04` and `flavor=light`.
 * Run `./gradlew patch` to retrieve HotSpot sources and patch them.
 * Run `./gradlew compileFastdebug` to build `fastdebug` version or `./gradlew compileProduct` to build `product` version.
 * Compiled libraries are placed in `hotspot/build/fastdebug` or `hotspot/build/product`.
 
+To build the installer with the `product` library you compiled, run `./gradlew :installer:jar -PuseLocalBuild`. The jar is `installer/build/libs/installer.jar`.
+
 ### Installing DCEVM
 
-* Replace `libjvm.so/jvm.dll/libjvm.dylib` in the target JRE.
-* Run `java -version`, it should include `Dynamic Code Evolution` string.
+With the installer, select the JDK 8u212 (or add it with "Add installation directory...") and choose to replace the default JVM or to install DCEVM as altjvm.
+
+By hand:
+
+* Replace `jvm.dll` (`libjvm.so` on Linux, `libjvm.dylib` on macOS) in the JDK 8u212 JRE, keeping a copy of the original, or copy it as `jre\bin\dcevm\jvm.dll` to install it side by side.
+* Run `java -version` (or `java -XXaltjvm=dcevm -version` side by side), it should include `Dynamic Code Evolution` string.
 
 Or you can install DCEVM using the gradle script:
 
 * Run `./gradlew installFastdebug -PtargetJre=$JAVA_HOME/jre` or `./gradlew installProduct -PtargetJre=$JAVA_HOME/jre`
 * DCEVM will be installed as "alternative" JVM. To use it, add `-XXaltjvm=dcevm`
 
-Alternatively, on Debian and Ubuntu systems DCEVM can be installed with the
-[`openjdk-7-jre-dcevm`](https://tracker.debian.org/pkg/openjdk-7-jre-dcevm)
-package and invoked by adding the `-dcevm` command line parameter:
-
-* Run `apt-get install openjdk-7-jre-dcevm`
-* Run `java -dcevm -version`, it should include `Dynamic Code Evolution` string.
-
 ### Testing DCEVM
 
-* Configure version you want in [gradle.properties](gradle.properties).
-* Set `JAVA_HOME` to point to JDK you want to test against (should be compatible with the version you set in [gradle.properties](gradle.properties)).
+* Set `JAVA_HOME` to point to JDK 8u212.
 * Run `./gradlew patch` to retrieve HotSpot sources and patch them.
-* Run `./gradlew test` to run tests.
+* Run `./gradlew test` to run tests. It builds and installs DCEVM first. The build succeeds even if tests fail, so check the reports.
 * Tests reports will be in `dcevm/build/reports/tests/index.html`
 
 To run tests from IDE, you need:
- 
+
 * Run `./gradlew agent:build` to build redefinition agent code.
 * Add JVM argument to use redefinition agent (`-javaagent:agent/build/libs/agent.jar`).
 * Add JVM argument to DCEVM VM if installed side-by-side (`-XXaltjvm=dcevm`).
+
+### Publishing a release
+
+See [docs/agents/releasing.md](docs/agents/releasing.md).
 
 ### Hotswap performance tweak (Experimental)
 
