@@ -11,10 +11,12 @@
 
 - **macOS**: Clang is not supported. Use gcc 4.8 and export `CC=/usr/local/bin/gcc-4.8 CXX=/usr/local/bin/g++-4.8 CFLAGS=-fobjc-exceptions SA_LDFLAGS=-fobjc-exceptions`.
 - **Linux with gcc 8**: relax warnings before building:
+
   ```sh
   export CFLAGS="${CFLAGS//-O2/-O3} ${CPPFLAGS} -Wno-error=deprecated-declarations -Wno-error=stringop-overflow= -Wno-error=return-type -Wno-error=cpp -fno-lifetime-dse -fno-delete-null-pointer-checks"
   export CXXFLAGS="${CXXFLAGS} ${CPPFLAGS}"
   ```
+
 - **Windows** (x64): `make` runs through `build.cmd` and the test JNI library through `native/compile.cmd`. Both call `windows-env.cmd`, which loads `vcvarsall.bat` of Visual Studio 2017 and checks Cygwin, failing before `make` with a message when something is missing. HotSpot 8u212 makefiles only know VS2017 by MSC_VER 1912/1913 (see below for how `build.cmd` handles the 15.9 compiler, MSC_VER 1916) and do not support VS2019/VS2022.
   - Visual Studio 2017 Build Tools 15.9 with the components `Microsoft.VisualStudio.Workload.VCTools`, `Microsoft.VisualStudio.Component.VC.Tools.x86.x64` and a Windows 10 SDK. The current VS2017 catalog only offers `Microsoft.VisualStudio.Component.Windows10SDK.19041` (older ids such as `...Windows10SDK.17763` are rejected). Install them with `vs_buildtools.exe` from `https://aka.ms/vs/15/release/vs_buildtools.exe`; `--installPath`, `--path cache=` and `--path shared=` can put it on another drive, but the Windows SDK always goes to the existing `KitsRoot10` (usually `C:\Program Files (x86)\Windows Kits\10`). The installation is located with `vswhere -version [15.0,16.0)`; set `VS2017_VCVARSALL=<path to vcvarsall.bat>` to use a specific one.
   - `build.cmd` adapts the environment for HotSpot 8u212: it forces `FORCE_MSC_VER=1912`/`FORCE_LD_VER=1412` (8u212 only maps MSC_VER 1912/1913 to VS2017; with cl 19.16 it would fall back to default compiler settings and fail with `LNK2011: precompiled object not linked in`), puts the MSVC tools directory before Cygwin's `/usr/bin` (Cygwin's `link.exe` is not the linker) and clears `NoDefaultCurrentDirectoryInExePath` (nmake runs the freshly built `adlc` from the current directory). Set `FORCE_MSC_VER`/`FORCE_LD_VER` yourself to override.

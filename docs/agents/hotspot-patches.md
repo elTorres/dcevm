@@ -13,7 +13,7 @@ All VM changes live in `hotspot/.hg/patches/` as a patch series in Mercurial Que
 
 `./gradlew patch` selects these guards (the same set `hg qselect` used to receive):
 
-```
+```groovy
 <flavor>   jdk7|jdk8   <hotspotTag>   <flavor>-<hotspotTag>
 ```
 
